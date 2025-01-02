@@ -1,0 +1,82 @@
+from google.colab import drive
+import requests
+import os
+import shutil
+import time
+import sys
+import hashlib
+
+# Step 1: Mount Google Drive
+def mount_drive():
+    print("Mounting Google Drive...")
+    drive.mount('/content/drive')
+    print("Google Drive mounted successfully!")
+
+# Step 2: Get download link from user
+def get_download_details():
+    link = input("Please provide the download link for the file: ")
+    # Automatically determine the file name and extension from the link
+    file_name = link.split("/")[-1].split("?")[0]  # Extract filename from URL
+    if len(file_name) > 100:  # Handle excessively long filenames
+        file_name = hashlib.md5(file_name.encode()).hexdigest() + os.path.splitext(file_name)[-1]
+    print(f"Automatically determined file name: {file_name}")
+    return link, file_name
+
+# Step 3: Check Google Drive storage and file size
+def check_storage_and_file_size(download_url):
+    # Checking file size from the download URL
+    response = requests.head(download_url, allow_redirects=True)
+    file_size = int(response.headers.get('content-length', 0))
+    print(f"File size: {file_size / (1024 * 1024):.2f} MB")
+
+    # Checking available Google Drive storage
+    total, used, free = shutil.disk_usage('/content/drive')
+    print(f"Google Drive storage - Total: {total / (1024 * 1024 * 1024):.2f} GB, Used: {used / (1024 * 1024 * 1024):.2f} GB, Free: {free / (1024 * 1024 * 1024):.2f} GB")
+
+    return file_size, free
+
+# Step 4: Download the file if storage is sufficient
+def download_file(download_url, file_name, file_size, free_space):
+    if file_size > free_space * (1024 * 1024 * 1024):
+        print("Not enough storage available in Google Drive.")
+        return
+
+    # Create a folder named 'GCdownload' in MyDrive
+    download_folder = '/content/drive/MyDrive/GCdownload'
+    if not os.path.exists(download_folder):
+        os.makedirs(download_folder)
+        print(f"Folder 'GCdownload' created in MyDrive.")
+
+    file_path = os.path.join(download_folder, file_name)
+
+    # Start downloading
+    print("Downloading file...")
+    start_time = time.time()
+    response = requests.get(download_url, stream=True)
+    total_downloaded = 0
+
+    with open(file_path, 'wb') as file:
+        for chunk in response.iter_content(chunk_size=1024 * 1024 * 100):  # 100 MB chunks
+            if chunk:
+                file.write(chunk)
+                total_downloaded += len(chunk)
+
+                # Calculate speed and progress
+                elapsed_time = time.time() - start_time
+                speed = total_downloaded / (1024 * 1024 * elapsed_time)  # MBps
+                percentage = (total_downloaded / file_size) * 100
+                sys.stdout.write(f"\rDownloaded: {total_downloaded / (1024 * 1024):.2f} MB ({percentage:.2f}%), Speed: {speed:.2f} MBps")
+                sys.stdout.flush()
+
+    print(f"\nFile downloaded successfully and saved to: {file_path}")
+
+# Main function to orchestrate the steps
+def main():
+    mount_drive()
+    download_url, file_name = get_download_details()
+    file_size, free_space = check_storage_and_file_size(download_url)
+    download_file(download_url, file_name, file_size, free_space)
+
+# Run the application
+if __name__ == "__main__":
+    main()
